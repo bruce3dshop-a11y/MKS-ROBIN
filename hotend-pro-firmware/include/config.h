@@ -15,14 +15,19 @@
 
 // ── ST7920 Display (Software SPI — EXP2 connector) ──────────
 // EXP2: CS=PB6, SCK=PA5, MOSI=PA7
-#define LCD_CS_PORT         GPIOB
-#define LCD_CS_PIN          GPIO_PIN_6
+// MKS Robin Nano V3.1 + RepRap Full Graphic Smart Controller (ST7920 SPI mode)
+// EXP1/EXP2 connector pins (verified against Marlin pins_MKS_ROBIN_NANO_V3.h):
+//   CS   = LCD_PINS_RS   = PA8
+//   MOSI = LCD_PINS_ENABLE = PD3  (ST7920 SID)
+//   SCK  = LCD_PINS_D4   = PD1   (ST7920 E/CLK)
+#define LCD_CS_PORT         GPIOA
+#define LCD_CS_PIN          GPIO_PIN_8
 
-#define LCD_SCK_PORT        GPIOA
-#define LCD_SCK_PIN         GPIO_PIN_5
+#define LCD_SCK_PORT        GPIOD
+#define LCD_SCK_PIN         GPIO_PIN_1
 
-#define LCD_MOSI_PORT       GPIOA
-#define LCD_MOSI_PIN        GPIO_PIN_7
+#define LCD_MOSI_PORT       GPIOD
+#define LCD_MOSI_PIN        GPIO_PIN_3
 
 #define LCD_WIDTH           128
 #define LCD_HEIGHT          64
