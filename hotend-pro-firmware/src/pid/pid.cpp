@@ -268,7 +268,7 @@ bool pid_autotune(float target_c,
         // Kick watchdog so the autotune session doesn't cause a reset.
         // Caller must pass an IWDG handle, or we call HAL_IWDG_Refresh if accessible.
         // We use a weak extern so it can be provided by main.cpp without a circular dep.
-        extern void autotune_watchdog_kick(void);
+        extern "C" void autotune_watchdog_kick(void);
         autotune_watchdog_kick();
 
         HAL_Delay(100);
