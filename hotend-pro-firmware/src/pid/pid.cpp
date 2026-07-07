@@ -13,6 +13,9 @@
 #include <math.h>
 #include <string.h>
 
+// Provided by main.cpp — kicks the IWDG during the blocking autotune loop
+extern "C" void autotune_watchdog_kick(void);
+
 // ── State ─────────────────────────────────────────────────────
 static PidCoeffs _coeffs = {
     PID_KP_DEFAULT, PID_KI_DEFAULT, PID_KD_DEFAULT
@@ -266,9 +269,6 @@ bool pid_autotune(float target_c,
         }
 
         // Kick watchdog so the autotune session doesn't cause a reset.
-        // Caller must pass an IWDG handle, or we call HAL_IWDG_Refresh if accessible.
-        // We use a weak extern so it can be provided by main.cpp without a circular dep.
-        extern "C" void autotune_watchdog_kick(void);
         autotune_watchdog_kick();
 
         HAL_Delay(100);
