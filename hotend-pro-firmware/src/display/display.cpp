@@ -26,7 +26,7 @@ static inline void delay_ns(void) {
 }
 
 /* Send one byte MSB-first over the ST7920 3-wire serial interface.
- * CS must already be low before calling. */
+ * CS must already be HIGH before calling (ST7920 CS is active-high). */
 static void spi_byte(uint8_t b) {
     for (int i = 7; i >= 0; i--) {
         sck_low();
@@ -35,30 +35,34 @@ static void spi_byte(uint8_t b) {
         sck_high();
         delay_ns();
     }
+    sck_low();
 }
 
 /* ST7920 serial command format:
- *  Start byte : 1111 1RWx  (R=0 send to display, W=0 for cmd / 1 for data)
- *  Data byte  : upper nibble | 0000  (high 4 bits)
- *  Data byte  : lower nibble | 0000  (low  4 bits) */
+ *  CS is ACTIVE HIGH — raise before frame, lower after.
+ *  Start byte : 1111 1RWx  (RW=0 write, x=0 cmd / x=1 data… actually:
+ *               0xF8 = 11111000 = write command
+ *               0xFA = 11111010 = write data)
+ *  Data byte  : upper nibble | 0000
+ *  Data byte  : lower nibble | 0000 */
 static void st7920_cmd(uint8_t cmd) {
-    cs_low();
+    cs_high();               // ST7920 CS is active-HIGH
     delay_ns();
     spi_byte(0xF8);          // start: write instruction
     spi_byte(cmd & 0xF0);    // high nibble
     spi_byte(cmd << 4);      // low  nibble
     delay_ns();
-    cs_high();
+    cs_low();                // deselect
 }
 
 static void st7920_data(uint8_t data) {
-    cs_low();
+    cs_high();
     delay_ns();
     spi_byte(0xFA);          // start: write data
     spi_byte(data & 0xF0);
     spi_byte(data << 4);
     delay_ns();
-    cs_high();
+    cs_low();
 }
 
 // ── Public API ───────────────────────────────────────────────
@@ -66,9 +70,10 @@ static void st7920_data(uint8_t data) {
 void display_init(void) {
     GPIO_InitTypeDef g = {};
 
-    // CS — PA/PB lines
+    // Enable clocks for all ports used by LCD pins
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOD_CLK_ENABLE();   // PD1=SCK, PD3=MOSI
 
     g.Mode  = GPIO_MODE_OUTPUT_PP;
     g.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
@@ -83,7 +88,7 @@ void display_init(void) {
     g.Pin = LCD_MOSI_PIN;
     HAL_GPIO_Init(LCD_MOSI_PORT, &g);
 
-    cs_high();
+    cs_low();    // CS idle = LOW (ST7920 CS is active-high)
     sck_low();
 
     HAL_Delay(50);   // Wait for LCD power up
