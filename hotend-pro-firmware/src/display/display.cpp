@@ -27,10 +27,25 @@ static inline void sck_low(void)  { LCD_SCK_PORT->BSRR = (uint32_t)LCD_SCK_PIN <
 static inline void sid_high(void) { LCD_MOSI_PORT->BSRR = LCD_MOSI_PIN; }
 static inline void sid_low(void)  { LCD_MOSI_PORT->BSRR = (uint32_t)LCD_MOSI_PIN << 16; }
 
-/* ~500 ns delay at 168 MHz (84 cycles ÷ ~6 cycles/NOP-loop ≈ 14 iterations).
- * Keeps SCK below 1 MHz as required by ST7920 at 5 V. */
+/* ~500 ns delay at 168 MHz — used for SPI bit-bang timing only.
+ * NOT sufficient between ST7920 commands (need ≥72 µs). */
 static inline void half_period(void) {
     for (volatile uint8_t i = 0; i < 14; i++) __NOP();
+}
+
+/* Busy-wait for at least `us` microseconds.
+ *
+ * ST7920 command execution time = 72 µs (datasheet).
+ * Arduino/Marlin hides this latency inside slow digitalWrite() calls
+ * (~5 µs × 24 transitions = ~120 µs per command naturally).
+ * With direct BSRR writes (~3 ns each) we must delay explicitly.
+ *
+ * Calibration: 168 MHz core, ~5 cycles per loop iteration (NOP + decrement
+ * + compare + branch on Cortex-M4 with I-cache).  34 iterations ≈ 1 µs.
+ */
+static void delay_us(uint32_t us) {
+    volatile uint32_t n = us * 34u;
+    while (n--) { __NOP(); }
 }
 
 /* Send one byte MSB-first. CS must already be HIGH. */
@@ -133,6 +148,15 @@ void display_init(void) {
     st7920_cmd(0x34);  HAL_Delay(5);   // Extended instructions
     st7920_cmd(0x36);  HAL_Delay(5);   // Graphic display ON
 
+    /* ── Connection diagnostic ────────────────────────────────
+     * Fill entire GDRAM with 1s (all pixels ON → solid black screen)
+     * for 400 ms.  If the display goes black: ST7920 is alive, SPI
+     * pins are correct.  If still solid blue: pins are wrong.
+     * Remove this block once the connection is confirmed working. */
+    memset(display_fb, 0xFF, sizeof(display_fb));
+    display_flush();
+    HAL_Delay(400);
+
     memset(display_fb, 0, sizeof(display_fb));
     display_flush();   // push blank frame to clear any GDRAM noise
 }
@@ -144,17 +168,27 @@ void display_init(void) {
  *     Upper half: FB rows  0-31  → Y = 0-31,  X-start = 0x00
  *     Lower half: FB rows 32-63  → Y = 0-31,  X-start = 0x08
  *   Each row = 16 bytes (128 pixels / 8).
+ *
+ * CRITICAL timing note:
+ *   ST7920 command execution time = 72 µs (datasheet).
+ *   We MUST wait ≥ 72 µs after setting the Y address before sending
+ *   the X address, and again before writing data.  Without this,
+ *   GDRAM writes silently fail and the display stays blank/blue.
  */
 void display_flush(void) {
     for (uint8_t row = 0; row < 32; row++) {
         /* Upper half */
         st7920_cmd(0x80 | row);   // Y address
+        delay_us(80);             // ≥ 72 µs execution time
         st7920_cmd(0x80);         // X address = 0
+        delay_us(80);
         st7920_data_stream(&display_fb[row * 16], 16);
 
         /* Lower half (same Y range, X offset = 8 words = 0x88) */
         st7920_cmd(0x80 | row);
+        delay_us(80);
         st7920_cmd(0x88);         // X address = 8
+        delay_us(80);
         st7920_data_stream(&display_fb[(row + 32) * 16], 16);
     }
 }
