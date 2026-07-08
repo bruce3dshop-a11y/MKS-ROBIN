@@ -29,6 +29,15 @@ static IWDG_HandleTypeDef hiwdg;
 
 // ─────────────────────────────────────────────────────────────
 int main(void) {
+    /* ── VTOR: redirect interrupt vectors to OUR firmware ────────
+     * The MKS bootloader sits at 0x08000000.  After it jumps to us
+     * at 0x08010000 the Vector Table Offset Register still points to
+     * the bootloader's vectors.  Without this fix any interrupt
+     * (including SysTick inside HAL_Init) traps to the bootloader
+     * and the firmware silently hangs. */
+    SCB->VTOR = 0x08010000UL;
+    __DSB();
+
     // HAL init (SysTick, NVIC grouping)
     HAL_Init();
 
@@ -129,6 +138,17 @@ int main(void) {
 
 // ─────────────────────────────────────────────────────────────
 // System clock: HSE 8 MHz → PLL → 168 MHz (AHB=168, APB1=42, APB2=84)
+//
+// BOOTLOADER COMPATIBILITY:
+//   The MKS bootloader configures HSE + PLL before jumping to our
+//   firmware.  HAL_RCC_OscConfig returns HAL_ERROR when it tries to
+//   modify a PLL that is already used as SYSCLK — this is correct HAL
+//   behaviour, not a real fault.  We therefore IGNORE the error code:
+//   if the bootloader already set 168 MHz we carry on; if it used a
+//   different frequency we still carry on (the chip runs, just maybe
+//   not at exactly 168 MHz).
+//   After both calls we re-sync SysTick via SystemCoreClockUpdate so
+//   HAL_Delay() is always accurate.
 // ─────────────────────────────────────────────────────────────
 static void SystemClock_Config(void) {
     RCC_OscInitTypeDef osc = {};
@@ -139,8 +159,10 @@ static void SystemClock_Config(void) {
     osc.PLL.PLLM       = 8;    // f_VCO_in = 8/8 = 1 MHz
     osc.PLL.PLLN       = 336;  // f_VCO    = 336 MHz
     osc.PLL.PLLP       = RCC_PLLP_DIV2;  // SYSCLK = 168 MHz
-    osc.PLL.PLLQ       = 7;    // USB = 48 MHz (not used but must be ≤ 48)
-    if (HAL_RCC_OscConfig(&osc) != HAL_OK) Error_Handler();
+    osc.PLL.PLLQ       = 7;
+    /* Do NOT call Error_Handler on failure — bootloader may have
+     * already locked the PLL.  HAL_ERROR here is expected. */
+    HAL_RCC_OscConfig(&osc);
 
     RCC_ClkInitTypeDef clk = {};
     clk.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
@@ -149,7 +171,14 @@ static void SystemClock_Config(void) {
     clk.AHBCLKDivider  = RCC_SYSCLK_DIV1;   // AHB  = 168 MHz
     clk.APB1CLKDivider = RCC_HCLK_DIV4;     // APB1 = 42 MHz (max 42)
     clk.APB2CLKDivider = RCC_HCLK_DIV2;     // APB2 = 84 MHz (max 84)
-    if (HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_5) != HAL_OK) Error_Handler();
+    /* FLASH_LATENCY_5 = 5 wait states, safe up to 180 MHz. */
+    HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_5);  // ignore error (same reason)
+
+    /* Re-read actual RCC registers and re-arm SysTick.
+     * This makes HAL_Delay() correct regardless of whether our PLL
+     * config matched the bootloader's or not. */
+    SystemCoreClockUpdate();
+    HAL_InitTick(TICK_INT_PRIORITY);
 
     // Enable peripheral clocks used throughout
     __HAL_RCC_GPIOA_CLK_ENABLE();
