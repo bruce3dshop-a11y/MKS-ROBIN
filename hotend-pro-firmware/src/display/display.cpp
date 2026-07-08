@@ -27,10 +27,12 @@ static inline void sck_low(void)  { LCD_SCK_PORT->BSRR = (uint32_t)LCD_SCK_PIN <
 static inline void sid_high(void) { LCD_MOSI_PORT->BSRR = LCD_MOSI_PIN; }
 static inline void sid_low(void)  { LCD_MOSI_PORT->BSRR = (uint32_t)LCD_MOSI_PIN << 16; }
 
-/* ~500 ns delay at 168 MHz — used for SPI bit-bang timing only.
- * NOT sufficient between ST7920 commands (need ≥72 µs). */
+/* SPI bit-bang half-period.
+ * ST7920 serial clock max = 1.1 MHz at VDD=5V.
+ * 50 NOP-loop iterations ≈ 50 × 5 cycles / 168 MHz ≈ 1.5 µs
+ * → SPI clock ≈ 333 kHz — comfortably below the 1.1 MHz limit. */
 static inline void half_period(void) {
-    for (volatile uint8_t i = 0; i < 14; i++) __NOP();
+    for (volatile uint8_t i = 0; i < 50; i++) __NOP();
 }
 
 /* Busy-wait for at least `us` microseconds.
@@ -179,16 +181,16 @@ void display_flush(void) {
     for (uint8_t row = 0; row < 32; row++) {
         /* Upper half */
         st7920_cmd(0x80 | row);   // Y address
-        delay_us(80);             // ≥ 72 µs execution time
+        HAL_Delay(1);             // ≥ 72 µs — use 1 ms (safe margin)
         st7920_cmd(0x80);         // X address = 0
-        delay_us(80);
+        HAL_Delay(1);
         st7920_data_stream(&display_fb[row * 16], 16);
 
         /* Lower half (same Y range, X offset = 8 words = 0x88) */
         st7920_cmd(0x80 | row);
-        delay_us(80);
+        HAL_Delay(1);
         st7920_cmd(0x88);         // X address = 8
-        delay_us(80);
+        HAL_Delay(1);
         st7920_data_stream(&display_fb[(row + 32) * 16], 16);
     }
 }

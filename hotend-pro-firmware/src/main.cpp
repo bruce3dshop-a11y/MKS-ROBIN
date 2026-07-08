@@ -177,6 +177,17 @@ static void Beeper_Init(void) {
     g.Speed = GPIO_SPEED_FREQ_HIGH;
     HAL_GPIO_Init(BEEPER_PORT, &g);
     HAL_GPIO_WritePin(BEEPER_PORT, BEEPER_PIN, GPIO_PIN_RESET);
+
+    /* ── Startup confirmation: 3 × 200 ms beeps ─────────────────
+     * If you hear this triple-beep pattern, our firmware is running.
+     * This is DISTINCT from the MKS bootloader single-beep.
+     * Remove once LCD is confirmed working. */
+    for (int i = 0; i < 3; i++) {
+        HAL_GPIO_WritePin(BEEPER_PORT, BEEPER_PIN, GPIO_PIN_SET);
+        HAL_Delay(200);
+        HAL_GPIO_WritePin(BEEPER_PORT, BEEPER_PIN, GPIO_PIN_RESET);
+        HAL_Delay(150);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
