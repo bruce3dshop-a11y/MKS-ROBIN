@@ -73,15 +73,25 @@ static void st7920_data(uint8_t d) {
     half_period();
 }
 
-/* Write a whole row of GDRAM bytes with CS held HIGH throughout.
- * This avoids repeated CS toggling overhead and matches U8glib behaviour. */
+/* Write multiple GDRAM bytes with CS held HIGH throughout.
+ *
+ * ST7920 serial protocol requires a sync byte BEFORE EACH data byte:
+ *   [CS HIGH]
+ *     0xFA + high_nibble + low_nibble   ← byte 0
+ *     0xFA + high_nibble + low_nibble   ← byte 1
+ *     ...
+ *   [CS LOW]
+ *
+ * Sending one sync byte for multiple data bytes is WRONG and results
+ * in a blank display even though commands are delivered correctly.
+ */
 static void st7920_data_stream(const uint8_t *buf, uint8_t len) {
     cs_high();
     half_period();
-    spi_byte(0xFA);                   // data sync
     for (uint8_t i = 0; i < len; i++) {
-        spi_byte(buf[i] & 0xF0);
-        spi_byte((uint8_t)(buf[i] << 4));
+        spi_byte(0xFA);                        // sync byte for THIS byte
+        spi_byte(buf[i] & 0xF0);              // high nibble
+        spi_byte((uint8_t)(buf[i] << 4));     // low  nibble
     }
     half_period();
     cs_low();
